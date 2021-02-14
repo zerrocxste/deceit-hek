@@ -1,4 +1,6 @@
-﻿#include <Windows.h>
+﻿#define _CRT_SECURE_NO_WARNINGS
+
+#include <Windows.h>
 #include <iostream>
 #include <vector>
 
@@ -70,7 +72,10 @@ namespace vars
 		bool health;
 		bool health_vampire;
 		bool armor;
+		bool draw_is_defeated;
 	}
+
+	char user_name[256];
 }
 
 namespace memory_utils
@@ -406,12 +411,6 @@ namespace drawing
 
 namespace game_utils
 {
-	//global var (?) pattern
-	//Address of signature = Game.DLL + ((0x00C2F348) 05.02.21)
-	//"\x18\x75\x00\x6C\xFA\x01\x00\x00\x50\x00\xFB\x62\xFA\x01\x00\x00\xF0\x2C\x00\x6C\xFA\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x6F", "xx?xxxxxx?xxxxxxxx?xxxxxxxxxxxxxx"
-	//or 00 00 00 18 75 27 6C FA
-	//global var + 0x80 = entity list
-
 	class Matrix4x4
 	{
 	public:
@@ -454,17 +453,17 @@ namespace game_utils
 
 	char* get_my_name()
 	{
-		return memory_utils::read_string({ memory_utils::get_base_address(), 0x24FA890 });
+		return memory_utils::read_string({ memory_utils::get_base_address(), 0x2491880, 0x58, 0x0, 0x230, 0x0, 0x10, 0x8, 0xFF0 });
 	}
 
 	DWORD64 get_entity_list()
 	{
-		return memory_utils::read<DWORD64>({ (DWORD64)game_module, 0xC2F348, 0x80 });
+		return memory_utils::read<DWORD64>({ (DWORD64)game_module, 0xC57838, 0x18, 0x80 });
 	}
 
 	int get_max_players_on_map()
 	{
-		return memory_utils::read<int>({ (DWORD64)game_module, 0xBC1544 });
+		return memory_utils::read<int>({ (DWORD64)game_module, 0xBC4544 });
 	}
 
 	class CDeceitProperties
@@ -585,8 +584,8 @@ namespace functions
 
 				auto health = entity->get_health();
 
-				if (health == 0.f)
-					continue;
+				/*if (health == 0.f)
+					continue;*/
 
 				auto health_vampire = entity->get_vampire_health();
 
@@ -636,14 +635,15 @@ namespace functions
 					if (vars::visuals::armor)
 						drawing::DrawStatusLine(x, y, w, h, armor, 100.f, ImColor(0.4f, 04.f, 1.f), drawing::LINE_STATUS_BAR::BOTTOM);
 
-					drawing::DrawIfDefeated(x, y, w, h, health);
+					if (vars::visuals::draw_is_defeated)
+						drawing::DrawIfDefeated(x, y, w, h, health);
 				}
 			}
 		}
 	}
 	namespace misc
 	{
-	
+		
 	}
 	void run()
 	{
@@ -724,6 +724,7 @@ void begin_scene()
 	{
 		ImGui::GetIO().MouseDrawCursor = true;
 		ImGui::Begin("alternativehack.xyz: Deceit meme | credits: zerrocxste, guss.", &vars::menu_open);
+		ImGui::Text("Hello, %s!", vars::user_name);
 		ImGui::BeginChild("functions", ImVec2(), true);
 		ImGui::Text("Visuals");
 		ImGui::Checkbox("Enable", &vars::visuals::enable);
@@ -732,8 +733,10 @@ void begin_scene()
 		ImGui::Checkbox("Health", &vars::visuals::health);
 		ImGui::Checkbox("Health vampire", &vars::visuals::health_vampire);
 		ImGui::Checkbox("Armor", &vars::visuals::armor);
+		ImGui::Checkbox("Draw is defeated", &vars::visuals::draw_is_defeated);
 		ImGui::EndChild();
-		ImGui::End();
+		//ImGui::End();
+		ImGui::EndWithShadow();
 	}
 	else
 	{
@@ -926,6 +929,8 @@ void hack_thread(HMODULE module)
 		std::cout << __FUNCTION__ << " > game.dll not found\n";
 		FreeLibraryAndExitThread(module, 1);
 	}
+
+	strcpy(vars::user_name, game_utils::get_my_name());
 
 	MH_Initialize();
 

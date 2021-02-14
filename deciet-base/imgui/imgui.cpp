@@ -6168,6 +6168,22 @@ void ImGui::End()
     SetCurrentWindow(g.CurrentWindowStack.empty() ? NULL : g.CurrentWindowStack.back());
 }
 
+void ImGui::EndWithShadow()
+{
+    auto WindowPos = GetWindowPos();
+    auto WindowSize = GetWindowSize();
+
+    ImGuiContext& g = *GImGui;
+    ImGuiWindow* window = g.CurrentWindow;
+
+    End();
+
+    const char* wnd_name = (const char*)window;
+
+    if (wnd_name != NULL && wnd_name[0] != '\0')
+        drawShadow(WindowPos, WindowSize, (const char*)window);
+}
+
 void ImGui::BringWindowToFocusFront(ImGuiWindow* window)
 {
     ImGuiContext& g = *GImGui;

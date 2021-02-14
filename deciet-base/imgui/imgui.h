@@ -294,6 +294,8 @@ namespace ImGui
     // - Note that the bottom of window stack always contains a window called "Debug".
     IMGUI_API bool          Begin(const char* name, bool* p_open = NULL, ImGuiWindowFlags flags = 0);
     IMGUI_API void          End();
+    IMGUI_API void          EndWithShadow();
+    IMGUI_API void          EndElementWithShadow(ImVec2 pos, ImVec2 size);
 
     // Child Windows
     // - Use child windows to begin into a self-contained independent scrolling/clipping regions within a host window. Child windows can embed their own child.
@@ -2084,6 +2086,8 @@ struct ImGuiStorage
     IMGUI_API void      BuildSortByKey();
 };
 
+
+
 // Helper: Manually clip large list of items.
 // If you are submitting lots of evenly spaced items and you have a random access to the list, you can perform coarse
 // clipping based on visibility to save yourself from processing those items at all.
@@ -2165,8 +2169,32 @@ struct ImColor
     // FIXME-OBSOLETE: May need to obsolete/cleanup those helpers.
     inline void    SetHSV(float h, float s, float v, float a = 1.0f){ ImGui::ColorConvertHSVtoRGB(h, s, v, Value.x, Value.y, Value.z); Value.w = a; }
     static ImColor HSV(float h, float s, float v, float a = 1.0f)   { float r, g, b; ImGui::ColorConvertHSVtoRGB(h, s, v, r, g, b); return ImColor(r, g, b, a); }
-    ImColor(float varible[3]) { Value.x = varible[0], Value.y = varible[1], Value.z = varible[2]; }
 };
+
+struct RectangleShadowSettings
+{
+    // Inputs
+    bool    linear = false;
+    float   sigma = 11.585f;
+    ImVec2  padding = ImVec2(50, 50);
+    ImVec2  rectPos = ImVec2(50, 50);
+    ImVec2  rectSize = ImVec2(120, 120);
+    ImVec2  shadowOffset = ImVec2(0, 0);
+    ImVec2  shadowSize = ImVec2(120, 50);
+    ImColor shadowColor = ImColor(0.6f, 0.6f, 0.6f, 1.0f);
+
+    int  rings = 10;
+    int  spacingBetweenRings = 1;
+    int  samplesPerCornerSide = 20;
+    int  spacingBetweenSamples = 4;
+
+    // Outputs
+    int totalVertices = 0;
+    int totalIndices = 0;
+};
+
+void drawShadow(ImVec2 pos, ImVec2 size, const char* wnd_name);
+void drawRectangleShadowVerticesAdaptive(RectangleShadowSettings& settings);
 
 //-----------------------------------------------------------------------------
 // Draw List API (ImDrawCmd, ImDrawIdx, ImDrawVert, ImDrawChannel, ImDrawListSplitter, ImDrawListFlags, ImDrawList, ImDrawData)

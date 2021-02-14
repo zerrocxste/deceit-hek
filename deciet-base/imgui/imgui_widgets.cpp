@@ -141,6 +141,14 @@ static ImVec2           InputTextCalcTextSizeW(const ImWchar* text_begin, const 
 // - BulletTextV()
 //-------------------------------------------------------------------------
 
+#include <map>
+
+constexpr auto speed = 0.2f;
+constexpr auto speed_element = 0.01f;
+
+std::map<const char*, float>m_alpha_var;
+std::map<const char*, float>m_alpha_element_var;
+
 void ImGui::TextEx(const char* text, const char* text_end, ImGuiTextFlags flags)
 {
     ImGuiWindow* window = GetCurrentWindow();
@@ -659,8 +667,13 @@ bool ImGui::ButtonBehavior(const ImRect& bb, ImGuiID id, bool* out_hovered, bool
     return pressed;
 }
 
+std::map<const char*, bool>m_shit_hovered;
+std::map<const char*, int>m_shit_hovered_count;
+
 bool ImGui::ButtonEx(const char* label, const ImVec2& size_arg, ImGuiButtonFlags flags)
 {
+    ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 10.f);
+
     ImGuiWindow* window = GetCurrentWindow();
     if (window->SkipItems)
         return false;
@@ -670,12 +683,16 @@ bool ImGui::ButtonEx(const char* label, const ImVec2& size_arg, ImGuiButtonFlags
     const ImGuiID id = window->GetID(label);
     const ImVec2 label_size = CalcTextSize(label, NULL, true);
 
+    const float square_sz = GetFrameHeight();
+
+    const float w = CalcItemWidth();
+
     ImVec2 pos = window->DC.CursorPos;
     if ((flags & ImGuiButtonFlags_AlignTextBaseLine) && style.FramePadding.y < window->DC.CurrLineTextBaseOffset) // Try to vertically align buttons that are smaller/have no padding so that text baseline matches (bit hacky, since it shouldn't be a flag)
         pos.y += window->DC.CurrLineTextBaseOffset - style.FramePadding.y;
     ImVec2 size = CalcItemSize(size_arg, label_size.x + style.FramePadding.x * 2.0f, label_size.y + style.FramePadding.y * 2.0f);
 
-    const ImRect bb(pos, pos + size);
+    const ImRect bb(pos + ImVec2(10.f, 0.f), pos + size + ImVec2(10.f, 0.f));
     ItemSize(size, style.FramePadding.y);
     if (!ItemAdd(bb, id))
         return false;
@@ -685,15 +702,63 @@ bool ImGui::ButtonEx(const char* label, const ImVec2& size_arg, ImGuiButtonFlags
     bool hovered, held;
     bool pressed = ButtonBehavior(bb, id, &hovered, &held, flags);
 
+    if (hovered && m_shit_hovered_count[label] < 2)
+    {
+        m_shit_hovered_count[label] += 2;
+        m_shit_hovered[label] = true;
+    }
+    else if (hovered == false && m_shit_hovered_count[label] > 0)
+    {
+        m_shit_hovered_count[label]--;
+    }
+
+    if (m_shit_hovered_count[label] > 0)
+        m_shit_hovered[label] = true;
+    else
+        m_shit_hovered[label] = false;
+
+    if (m_shit_hovered[label] && m_alpha_var[label] <= 1.f)
+    {
+        m_alpha_var[label] += speed;
+    }
+    else if (m_alpha_var[label] >= 0.f)
+    {
+        m_alpha_var[label] -= speed;
+    }
+
+    if (m_alpha_var[label] >= 0.f)
+    {
+        RectangleShadowSettings shadowSettings;
+
+        shadowSettings.shadowColor = ImColor(0.f, 0.f, 0.f);
+        shadowSettings.rectPos = ImVec2(10.f, -size.y);
+        shadowSettings.rectSize = ImVec2(size.x, size.y - 5.f);
+        shadowSettings.sigma = 6.f;
+
+        drawRectangleShadowVerticesAdaptive(shadowSettings);
+    }
+
     // Render
-    const ImU32 col = GetColorU32((held && hovered) ? ImGuiCol_ButtonActive : hovered ? ImGuiCol_ButtonHovered : ImGuiCol_Button);
+    /*const*/ ImU32 col = GetColorU32((held && hovered) ? ImGuiCol_ButtonActive : hovered ? ImGuiCol_ButtonHovered : ImGuiCol_Button);
+
+    auto colx4 = ColorConvertU32ToFloat4(col);
+    col = ColorConvertFloat4ToU32(ImVec4(colx4.x, colx4.y, colx4.z, m_alpha_var[label]));
+
     RenderNavHighlight(bb, id);
-    RenderFrame(bb.Min, bb.Max, col, true, style.FrameRounding);
+    RenderFrame(bb.Min, bb.Max, GetColorU32(ImGuiCol_Button), true, 5.f);
+
+    if (m_alpha_var[label] >= 0.f)
+    {
+        RenderFrame(bb.Min, bb.Max, col, true, 5.f);
+    }
+
     RenderTextClipped(bb.Min + style.FramePadding, bb.Max - style.FramePadding, label, NULL, &label_size, style.ButtonTextAlign, &bb);
 
     // Automatically close popups
     //if (pressed && !(flags & ImGuiButtonFlags_DontClosePopups) && (window->Flags & ImGuiWindowFlags_Popup))
     //    CloseCurrentPopup();
+
+    ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 10.f);
 
     IMGUI_TEST_ENGINE_ITEM_INFO(id, label, window->DC.LastItemStatusFlags);
     return pressed;
@@ -1054,13 +1119,14 @@ bool ImGui::Checkbox(const char* label, bool* v)
         return false;
 
     ImGuiContext& g = *GImGui;
+
     const ImGuiStyle& style = g.Style;
     const ImGuiID id = window->GetID(label);
     const ImVec2 label_size = CalcTextSize(label, NULL, true);
 
     const float square_sz = GetFrameHeight();
-    const ImVec2 pos = window->DC.CursorPos;
-    const ImRect total_bb(pos, pos + ImVec2(square_sz + (label_size.x > 0.0f ? style.ItemInnerSpacing.x + label_size.x : 0.0f), label_size.y + style.FramePadding.y * 2.0f));
+    const ImVec2 pos = window->DC.CursorPos + ImVec2(10.f, 10.f);
+    const ImRect total_bb(pos, pos + ImVec2(square_sz + (label_size.x > 0.0f ? style.ItemInnerSpacing.x + label_size.x : 0.0f) + 20.f, label_size.y + style.FramePadding.y * 2.0f));
     ItemSize(total_bb, style.FramePadding.y);
     if (!ItemAdd(total_bb, id))
         return false;
@@ -1073,10 +1139,67 @@ bool ImGui::Checkbox(const char* label, bool* v)
         MarkItemEdited(id);
     }
 
+    bool hovered_item = IsItemHovered();
+
+    if (hovered_item && m_alpha_var[label] <= 1.f)
+    {
+        m_alpha_var[label] += speed;
+    }
+    else if (m_alpha_var[label] >= 0.f)
+    {
+        m_alpha_var[label] -= speed;
+    }
+
+    auto frame_col = ColorConvertU32ToFloat4(GetColorU32(ImGuiCol_FrameBg));
+
+    if (m_alpha_var[label] >= 0.f)
+    {
+        if (m_alpha_var[label] >= 0.7f)
+        {
+            RectangleShadowSettings shadowSettings;
+
+            shadowSettings.shadowColor = ImColor(0, 0, 0);
+            shadowSettings.rectPos = ImVec2(style.ItemInnerSpacing.x + 4.f, style.ItemInnerSpacing.y - 20.f);
+            shadowSettings.rectSize = ImVec2(square_sz + (label_size.x > 0.0f ? style.ItemInnerSpacing.x + label_size.x : 0.0f) + 20.f, label_size.y + style.FramePadding.y * 4.0f);
+            shadowSettings.sigma = 6.f;
+
+            drawRectangleShadowVerticesAdaptive(shadowSettings);
+        }
+        
+        RenderFrame(ImVec2(pos.x - 5.f, pos.y - 5.f),
+            pos + ImVec2(square_sz + (label_size.x > 0.0f ? style.ItemInnerSpacing.x + label_size.x : 0.0f) + 20.f, label_size.y + style.FramePadding.y * 4.0f),
+            ImColor(frame_col.x - 0.2f, frame_col.y - 0.2f, frame_col.z - 0.2f, m_alpha_var[label]), true, 5.f);
+    }
+
     const ImRect check_bb(pos, pos + ImVec2(square_sz, square_sz));
+
+    bool element_hovered = hovered;
+
+    if (element_hovered && m_alpha_element_var[label] <= 1.f)
+    {
+        m_alpha_element_var[label] += speed_element;
+    }
+    else if (m_alpha_element_var[label] >= 0.f)
+    {
+        m_alpha_element_var[label] -= speed_element;
+    }
+
     RenderNavHighlight(total_bb, id);
-    RenderFrame(check_bb.Min, check_bb.Max, GetColorU32((held && hovered) ? ImGuiCol_FrameBgActive : hovered ? ImGuiCol_FrameBgHovered : ImGuiCol_FrameBg), true, style.FrameRounding);
+    RenderFrame(check_bb.Min, check_bb.Max, GetColorU32(ImGuiCol_FrameBg), true, 3.f);
+
     ImU32 check_col = GetColorU32(ImGuiCol_CheckMark);
+
+    bool active_item = *v;
+
+    if (active_item && m_alpha_element_var[label] <= 1.f)
+    {
+        m_alpha_element_var[label] += speed;
+    }
+    else if (m_alpha_element_var[label] >= 0.f)
+    {
+        m_alpha_element_var[label] -= speed;
+    }
+
     bool mixed_value = (window->DC.ItemFlags & ImGuiItemFlags_MixedValue) != 0;
     if (mixed_value)
     {
@@ -1085,18 +1208,27 @@ bool ImGui::Checkbox(const char* label, bool* v)
         ImVec2 pad(ImMax(1.0f, IM_FLOOR(square_sz / 3.6f)), ImMax(1.0f, IM_FLOOR(square_sz / 3.6f)));
         window->DrawList->AddRectFilled(check_bb.Min + pad, check_bb.Max - pad, check_col, style.FrameRounding);
     }
-    else if (*v)
+
+    if (m_alpha_element_var[label] > 0.f)
     {
         const float pad = ImMax(1.0f, IM_FLOOR(square_sz / 6.0f));
+
+        auto colx4mark = ColorConvertU32ToFloat4(check_col);
+
+        check_col = ColorConvertFloat4ToU32(ImVec4(colx4mark.x, colx4mark.y, colx4mark.z, ImClamp(m_alpha_element_var[label], 0.f, colx4mark.w)));
+
         RenderCheckMark(window->DrawList, check_bb.Min + ImVec2(pad, pad), check_col, square_sz - pad * 2.0f);
     }
 
     if (g.LogEnabled)
         LogRenderedText(&total_bb.Min, mixed_value ? "[~]" : *v ? "[x]" : "[ ]");
     if (label_size.x > 0.0f)
-        RenderText(ImVec2(check_bb.Max.x + style.ItemInnerSpacing.x, check_bb.Min.y + style.FramePadding.y), label);
+        RenderText(ImVec2(check_bb.Max.x + style.ItemInnerSpacing.x + 8.f, check_bb.Min.y + style.FramePadding.y - 0.5f), label);
 
     IMGUI_TEST_ENGINE_ITEM_INFO(id, label, window->DC.ItemFlags | ImGuiItemStatusFlags_Checkable | (*v ? ImGuiItemStatusFlags_Checked : 0));
+
+    SetCursorPosY(GetCursorPosY() + 15.f);
+
     return pressed;
 }
 
@@ -1517,6 +1649,8 @@ static float CalcMaxPopupHeightFromItemCount(int items_count)
 
 bool ImGui::BeginCombo(const char* label, const char* preview_value, ImGuiComboFlags flags)
 {
+    ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 20.f);
+
     // Always consume the SetNextWindowSizeConstraint() call in our early return paths
     ImGuiContext& g = *GImGui;
     bool has_window_size_constraint = (g.NextWindowData.Flags & ImGuiNextWindowDataFlags_HasSizeConstraint) != 0;
@@ -1535,34 +1669,104 @@ bool ImGui::BeginCombo(const char* label, const char* preview_value, ImGuiComboF
     const ImVec2 label_size = CalcTextSize(label, NULL, true);
     const float expected_w = CalcItemWidth();
     const float w = (flags & ImGuiComboFlags_NoPreview) ? arrow_size : expected_w;
-    const ImRect frame_bb(window->DC.CursorPos, window->DC.CursorPos + ImVec2(w, label_size.y + style.FramePadding.y * 2.0f));
+    /*const*/ ImRect frame_bb(ImVec2(window->DC.CursorPos.x + 5.f, window->DC.CursorPos.y), window->DC.CursorPos + ImVec2(w, label_size.y + style.FramePadding.y * 2.0f));
+    frame_bb = ImRect(ImVec2(frame_bb.Min.x + 12.f, frame_bb.Min.y - 12.f), ImVec2(frame_bb.Max.x, frame_bb.Max.y + 12.f));
     const ImRect total_bb(frame_bb.Min, frame_bb.Max + ImVec2(label_size.x > 0.0f ? style.ItemInnerSpacing.x + label_size.x : 0.0f, 0.0f));
     ItemSize(total_bb, style.FramePadding.y);
     if (!ItemAdd(total_bb, id, &frame_bb))
         return false;
 
+    frame_bb = ImRect(ImVec2(frame_bb.Min.x + 1.f, frame_bb.Min.y + 12.f), ImVec2(frame_bb.Max.x, frame_bb.Max.y - 12.f));
+
+    bool hovered_item = IsItemHovered();
+
+    if (hovered_item && m_alpha_var[label] <= 1.f)
+    {
+        m_alpha_var[label] += speed;
+    }
+    else if (m_alpha_var[label] >= 0.f)
+    {
+        m_alpha_var[label] -= speed;
+    }
+
+    auto frame_col = ColorConvertU32ToFloat4(GetColorU32(ImGuiCol_FrameBg));
+
+    if (m_alpha_var[label] >= 0.f)
+    {
+        if (m_alpha_var[label] >= 0.7)
+        {
+            RectangleShadowSettings shadowSettings;
+
+            shadowSettings.shadowColor = ImColor(0, 0, 0);
+            shadowSettings.rectPos = ImVec2(7.f, -59.f);
+            shadowSettings.rectSize = ImVec2(w + 97.f, 42.f);
+            shadowSettings.sigma = 6.f;
+
+            drawRectangleShadowVerticesAdaptive(shadowSettings);
+        }
+
+        RenderFrame(ImVec2(total_bb.Min.x - 11.f, total_bb.Min.y), ImVec2(total_bb.Max.x + 12.f, total_bb.Max.y),
+            ImColor(frame_col.x - 0.2f, frame_col.y - 0.2f, frame_col.z - 0.2f, m_alpha_var[label]), true, 5.f);
+    }
+
     bool hovered, held;
     bool pressed = ButtonBehavior(frame_bb, id, &hovered, &held);
     bool popup_open = IsPopupOpen(id, ImGuiPopupFlags_None);
 
-    const ImU32 frame_col = GetColorU32(hovered ? ImGuiCol_FrameBgHovered : ImGuiCol_FrameBg);
+    /*ImU32 frame_col = GetColorU32(hovered ? ImGuiCol_FrameBgHovered : ImGuiCol_FrameBg);
+    auto colx4 = ColorConvertU32ToFloat4(frame_col);
+    frame_col = ColorConvertFloat4ToU32(ImVec4(colx4.x, colx4.y, colx4.z, 1.f));*/
+
+    bool element_hovered = hovered;
+
+    if (element_hovered && m_alpha_element_var[label] <= 1.f)
+    {
+        m_alpha_element_var[label] += speed_element;
+    }
+    else if (m_alpha_element_var[label] >= 0.f)
+    {
+        m_alpha_element_var[label] -= speed_element;
+    }
+
+    ImU32 col = GetColorU32(ImGuiCol_FrameBgHovered);
+
+    auto colx4 = ColorConvertU32ToFloat4(col);
+    col = ColorConvertFloat4ToU32(ImVec4(colx4.x, colx4.y, colx4.z, ImClamp(m_alpha_element_var[label], 0.f, ColorConvertU32ToFloat4(GetColorU32(ImGuiCol_FrameBgHovered)).w)));
+
+
+
     const float value_x2 = ImMax(frame_bb.Min.x, frame_bb.Max.x - arrow_size);
     RenderNavHighlight(frame_bb, id);
     if (!(flags & ImGuiComboFlags_NoPreview))
-        window->DrawList->AddRectFilled(frame_bb.Min, ImVec2(value_x2, frame_bb.Max.y), frame_col, style.FrameRounding, (flags & ImGuiComboFlags_NoArrowButton) ? ImDrawCornerFlags_All : ImDrawCornerFlags_Left);
+        window->DrawList->AddRectFilled(frame_bb.Min, ImVec2(value_x2, frame_bb.Max.y), GetColorU32(ImGuiCol_FrameBg), 5.f,
+            (flags & ImGuiComboFlags_NoArrowButton) ? ImDrawCornerFlags_All : ImDrawCornerFlags_Left);
+
+    if (m_alpha_element_var[label] >= 0.f)
+    {
+        window->DrawList->AddRectFilled(frame_bb.Min, ImVec2(value_x2, frame_bb.Max.y), col, 5.f,
+            (flags & ImGuiComboFlags_NoArrowButton) ? ImDrawCornerFlags_All : ImDrawCornerFlags_Left);
+    }
+
     if (!(flags & ImGuiComboFlags_NoArrowButton))
     {
         ImU32 bg_col = GetColorU32((popup_open || hovered) ? ImGuiCol_ButtonHovered : ImGuiCol_Button);
         ImU32 text_col = GetColorU32(ImGuiCol_Text);
-        window->DrawList->AddRectFilled(ImVec2(value_x2, frame_bb.Min.y), frame_bb.Max, bg_col, style.FrameRounding, (w <= arrow_size) ? ImDrawCornerFlags_All : ImDrawCornerFlags_Right);
+        window->DrawList->AddRectFilled(ImVec2(value_x2, frame_bb.Min.y), frame_bb.Max, GetColorU32(ImGuiCol_FrameBg),
+            5.f, (w <= arrow_size) ? ImDrawCornerFlags_All : ImDrawCornerFlags_Right);
+
+        if (m_alpha_element_var[label] >= 0.f)
+        {
+            window->DrawList->AddRectFilled(ImVec2(value_x2, frame_bb.Min.y), frame_bb.Max, col, 5.f, (w <= arrow_size) ? ImDrawCornerFlags_All : ImDrawCornerFlags_Right);
+        }
+
         if (value_x2 + arrow_size - style.FramePadding.x <= frame_bb.Max.x)
             RenderArrow(window->DrawList, ImVec2(value_x2 + style.FramePadding.y, frame_bb.Min.y + style.FramePadding.y), text_col, ImGuiDir_Down, 1.0f);
     }
-    RenderFrameBorder(frame_bb.Min, frame_bb.Max, style.FrameRounding);
+    RenderFrameBorder(frame_bb.Min, frame_bb.Max, 5.f);
     if (preview_value != NULL && !(flags & ImGuiComboFlags_NoPreview))
         RenderTextClipped(frame_bb.Min + style.FramePadding, ImVec2(value_x2, frame_bb.Max.y), preview_value, NULL, NULL, ImVec2(0.0f, 0.0f));
     if (label_size.x > 0)
-        RenderText(ImVec2(frame_bb.Max.x + style.ItemInnerSpacing.x, frame_bb.Min.y + style.FramePadding.y), label);
+        RenderText(ImVec2(frame_bb.Max.x + style.ItemInnerSpacing.x + 5.f, frame_bb.Min.y + style.FramePadding.y - 2.f), label);
 
     if ((pressed || g.NavActivateId == id) && !popup_open)
     {
@@ -1615,8 +1819,10 @@ bool ImGui::BeginCombo(const char* label, const char* preview_value, ImGuiComboF
     ImGuiWindowFlags window_flags = ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_Popup | ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoMove;
 
     // Horizontally align ourselves with the framed text
-    PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(style.FramePadding.x, style.WindowPadding.y));
+    PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(9.f, 7.f));
+    PushStyleVar(ImGuiStyleVar_PopupRounding, 5.f);
     bool ret = Begin(name, NULL, window_flags);
+    PopStyleVar();
     PopStyleVar();
     if (!ret)
     {
@@ -1624,6 +1830,9 @@ bool ImGui::BeginCombo(const char* label, const char* preview_value, ImGuiComboF
         IM_ASSERT(0);   // This should never happen as we tested for IsPopupOpen() above
         return false;
     }
+
+    //ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 10.f);
+
     return true;
 }
 
@@ -1700,6 +1909,7 @@ bool ImGui::Combo(const char* label, int* current_item, bool (*items_getter)(voi
     }
 
     EndCombo();
+
     return value_changed;
 }
 
@@ -1707,6 +1917,7 @@ bool ImGui::Combo(const char* label, int* current_item, bool (*items_getter)(voi
 bool ImGui::Combo(const char* label, int* current_item, const char* const items[], int items_count, int height_in_items)
 {
     const bool value_changed = Combo(label, current_item, Items_ArrayGetter, (void*)items, items_count, height_in_items);
+    ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 20.f);
     return value_changed;
 }
 
@@ -2840,18 +3051,22 @@ bool ImGui::SliderBehavior(const ImRect& bb, ImGuiID id, ImGuiDataType data_type
 // Read code of e.g. SliderFloat(), SliderInt() etc. or examples in 'Demo->Widgets->Data Types' to understand how to use this function directly.
 bool ImGui::SliderScalar(const char* label, ImGuiDataType data_type, void* p_data, const void* p_min, const void* p_max, const char* format, ImGuiSliderFlags flags)
 {
+    ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 20.f);
+    ImGui::SetCursorPosX(ImGui::GetCursorPosX() + 9.f);
+
     ImGuiWindow* window = GetCurrentWindow();
     if (window->SkipItems)
         return false;
 
+    const float square_sz = GetFrameHeight();
     ImGuiContext& g = *GImGui;
     const ImGuiStyle& style = g.Style;
     const ImGuiID id = window->GetID(label);
     const float w = CalcItemWidth();
 
     const ImVec2 label_size = CalcTextSize(label, NULL, true);
-    const ImRect frame_bb(window->DC.CursorPos, window->DC.CursorPos + ImVec2(w, label_size.y + style.FramePadding.y * 2.0f));
-    const ImRect total_bb(frame_bb.Min, frame_bb.Max + ImVec2(label_size.x > 0.0f ? style.ItemInnerSpacing.x + label_size.x : 0.0f, 0.0f));
+    ImRect frame_bb(window->DC.CursorPos + ImVec2(10.f, 0.f), window->DC.CursorPos + ImVec2(w, label_size.y + style.FramePadding.y * 1.0f));
+    const ImRect total_bb(frame_bb.Min, frame_bb.Max + ImVec2(label_size.x > 0.0f ? style.ItemInnerSpacing.x + 10.f : 0.0f, 37.0f));
 
     ItemSize(total_bb, style.FramePadding.y);
     if (!ItemAdd(total_bb, id, &frame_bb))
@@ -2892,10 +3107,62 @@ bool ImGui::SliderScalar(const char* label, ImGuiDataType data_type, void* p_dat
         return TempInputScalar(frame_bb, id, label, data_type, p_data, format, is_clamp_input ? p_min : NULL, is_clamp_input ? p_max : NULL);
     }
 
-    // Draw frame
-    const ImU32 frame_col = GetColorU32(g.ActiveId == id ? ImGuiCol_FrameBgActive : g.HoveredId == id ? ImGuiCol_FrameBgHovered : ImGuiCol_FrameBg);
+    bool hovered_item = IsItemHovered();
+
+    if (hovered_item && m_alpha_var[label] <= 1.f)
+    {
+        m_alpha_var[label] += speed;
+    }
+    else if (m_alpha_var[label] >= 0.f)
+    {
+        m_alpha_var[label] -= speed;
+    }
+
+    auto frame_col = ColorConvertU32ToFloat4(GetColorU32(ImGuiCol_FrameBg));
+
+    if (m_alpha_var[label] >= 0.f)
+    {
+        if (m_alpha_var[label] >= 0.7f)
+        {
+            RectangleShadowSettings shadowSettings;
+
+            shadowSettings.shadowColor = ImColor(0.f, 0.f, 0.f);
+            shadowSettings.rectPos = ImVec2(style.ItemInnerSpacing.x + 4.f, style.ItemInnerSpacing.y - 72.f);
+            shadowSettings.rectSize = ImVec2(w + 13.f, 63.f);
+
+            shadowSettings.sigma = 6.f;
+
+            drawRectangleShadowVerticesAdaptive(shadowSettings);
+        }
+
+        RenderFrame(ImVec2(total_bb.Min.x - 14.f, total_bb.Min.y - 10.f), ImVec2(total_bb.Max.x, total_bb.Max.y),
+            ImColor(frame_col.x - 0.2f, frame_col.y - 0.2f, frame_col.z - 0.2f, m_alpha_var[label]), true, 5.f);
+    }
+
+    bool element_hovered = g.HoveredId == id;
+
+    if (element_hovered && m_alpha_element_var[label] <= 1.f)
+    {
+        m_alpha_element_var[label] += speed_element;
+    }
+    else if (m_alpha_element_var[label] >= 0.f)
+    {
+        m_alpha_element_var[label] -= speed_element;
+    }
+
+    ImU32 col = GetColorU32(ImGuiCol_FrameBgHovered);
+
+    auto colx4 = ColorConvertU32ToFloat4(col);
+    col = ColorConvertFloat4ToU32(ImVec4(colx4.x, colx4.y, colx4.z, ImClamp(m_alpha_element_var[label], 0.f, colx4.w)));
+
     RenderNavHighlight(frame_bb, id);
-    RenderFrame(frame_bb.Min, frame_bb.Max, frame_col, true, g.Style.FrameRounding);
+    frame_bb.Max.y -= 10.f;
+    RenderFrame(frame_bb.Min, frame_bb.Max, GetColorU32(ImGuiCol_FrameBg), true, 3.f);
+
+    if (m_alpha_element_var[label] >= 0.f)
+    { 
+        RenderFrame(frame_bb.Min, frame_bb.Max, col, true, 3.f);
+    }
 
     // Slider behavior
     ImRect grab_bb;
@@ -2903,17 +3170,31 @@ bool ImGui::SliderScalar(const char* label, ImGuiDataType data_type, void* p_dat
     if (value_changed)
         MarkItemEdited(id);
 
+    grab_bb.Max.y += 2.f;
+
     // Render grab
+
+    //ImDrawCornerFlags_
     if (grab_bb.Max.x > grab_bb.Min.x)
-        window->DrawList->AddRectFilled(grab_bb.Min, grab_bb.Max, GetColorU32(g.ActiveId == id ? ImGuiCol_SliderGrabActive : ImGuiCol_SliderGrab), style.GrabRounding);
+    {
+        if (grab_bb.Max.x >= frame_bb.Max.x - 2.f)
+            window->DrawList->AddRectFilled(frame_bb.Min, grab_bb.Max, GetColorU32(g.ActiveId == id ? ImGuiCol_SliderGrabActive : ImGuiCol_SliderGrab), 3.f);
+        else
+            window->DrawList->AddRectFilled(frame_bb.Min, grab_bb.Max, GetColorU32(g.ActiveId == id ? ImGuiCol_SliderGrabActive : ImGuiCol_SliderGrab), 3.f, ImDrawCornerFlags_TopLeft | ImDrawCornerFlags_BotLeft);
+    }      
 
     // Display value using user-provided display format so user can add prefix/suffix/decorations to the value.
     char value_buf[64];
     const char* value_buf_end = value_buf + DataTypeFormatString(value_buf, IM_ARRAYSIZE(value_buf), data_type, p_data, format);
-    RenderTextClipped(frame_bb.Min, frame_bb.Max, value_buf, value_buf_end, NULL, ImVec2(0.5f, 0.5f));
+    //RenderTextClipped(frame_bb.Min, frame_bb.Max, value_buf, value_buf_end, NULL, ImVec2(0.5f, 0.5f));
+
+    char text[255];
+    sprintf(text, "%s: %s", label, value_buf);
 
     if (label_size.x > 0.0f)
-        RenderText(ImVec2(frame_bb.Max.x + style.ItemInnerSpacing.x, frame_bb.Min.y + style.FramePadding.y), label);
+        RenderText(ImVec2((frame_bb.Max.x + style.ItemInnerSpacing.x) - w / 2.f - label_size.x, frame_bb.Min.y + style.FramePadding.y + 25.f), text);
+
+    ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 10.f);
 
     IMGUI_TEST_ENGINE_ITEM_INFO(id, label, window->DC.ItemFlags);
     return value_changed;
@@ -5941,6 +6222,8 @@ bool ImGui::Selectable(const char* label, bool selected, ImGuiSelectableFlags fl
     ImVec2 pos = window->DC.CursorPos;
     pos.y += window->DC.CurrLineTextBaseOffset;
     ItemSize(size, 0.0f);
+
+    
 
     // Fill horizontal space
     // We don't support (size < 0.0f) in Selectable() because the ItemSpacing extension would make explicitely right-aligned sizes not visibly match other widgets.
