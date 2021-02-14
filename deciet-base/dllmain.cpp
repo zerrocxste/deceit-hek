@@ -453,7 +453,7 @@ namespace game_utils
 
 	char* get_my_name()
 	{
-		return memory_utils::read_string({ memory_utils::get_base_address(), 0x2491880, 0x58, 0x0, 0x230, 0x0, 0x10, 0x8, 0xFF0 });
+		return memory_utils::read_string({ memory_utils::get_base_address(), 0x25A2938, 0x128, 0x14, 0x18, 0xF0, 0x2C, 0x128, 0x0 });
 	}
 
 	DWORD64 get_entity_list()
