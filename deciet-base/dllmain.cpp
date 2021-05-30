@@ -3,6 +3,8 @@
 #include <Windows.h>
 #include <iostream>
 #include <vector>
+#include <heapapi.h>
+#include <intsafe.h>
 
 #include <d3d11.h>
 #pragma comment (lib, "d3d11")
@@ -74,8 +76,6 @@ namespace vars
 		bool armor;
 		bool draw_is_defeated;
 	}
-
-	char user_name[256];
 }
 
 namespace memory_utils
@@ -212,6 +212,67 @@ namespace memory_utils
 			if (found)
 			{
 				return base + i;
+			}
+		}
+
+		return NULL;
+	}
+
+	DWORD_OF_BITNESS address_is_valid_on_module(const DWORD_OF_BITNESS address, DWORD_OF_BITNESS lower, DWORD_OF_BITNESS higher)
+	{
+		return ((address < lower) || (address > higher));
+	}
+
+	DWORD_OF_BITNESS find_pattern_in_heap(const char* pattern, const char* mask)
+	{
+		DWORD_OF_BITNESS base = (DWORD_OF_BITNESS)GetProcessHeap();
+
+		SYSTEM_INFO sysInfo;
+		GetSystemInfo(&sysInfo);
+		DWORD_OF_BITNESS size = (DWORD_OF_BITNESS)sysInfo.lpMaximumApplicationAddress;
+
+		DWORD_OF_BITNESS patternLength = (DWORD_OF_BITNESS)strlen(mask);
+
+		while (base < size)
+		{
+			MEMORY_BASIC_INFORMATION mbi;
+
+			if (VirtualQuery((LPCVOID)base, &mbi, sizeof(mbi)) != NULL)
+			{
+				const DWORD_OF_BITNESS& start = (DWORD_OF_BITNESS)mbi.BaseAddress;
+				const auto& end = mbi.RegionSize;
+
+				if (mbi.State == MEM_COMMIT && mbi.Protect == PAGE_READWRITE)
+				{
+					for (DWORD_OF_BITNESS i = 0; i < end - patternLength; i++)
+					{
+						bool found = true;
+						for (DWORD_OF_BITNESS j = 0; j < patternLength; j++)
+						{
+							if (mask[j] == '?')
+								continue;
+
+							/*if (IsBadCodePtr((FARPROC)(base + i + j)) != NULL)
+								continue;*/
+
+							if (pattern[j] != *(char*)(base + i + j))
+							{
+								found = false;
+								break;
+							}
+						}
+
+						if (found)
+						{
+							return start + i;
+						}
+					}
+				}
+				base += end;
+			}
+			else
+			{
+				break;
 			}
 		}
 
@@ -404,12 +465,12 @@ namespace drawing
 
 		if (health <= 2.f)
 		{
-			drawing::AddText(x + w / 2.f, y + h, ImColor(1.f, 0.f, 0.f), drawing::FL_CENTER_X, "DESTROYED");
+			drawing::AddText(x + w / 2.f, y + h, ImColor(1.f, 0.f, 0.f), drawing::FL_CENTER_X, "THIS ASS DEZTROYED");
 		}
 	}
 }
 
-namespace game_utils
+namespace math_utils
 {
 	class Matrix4x4
 	{
@@ -445,68 +506,62 @@ namespace game_utils
 
 		float x, y, z;
 	};
+}
 
-	Matrix4x4 get_matrix()
+namespace game_utils
+{
+	math_utils::Matrix4x4 get_matrix()
 	{
-		return memory_utils::read<Matrix4x4>({ memory_utils::get_base_address(), 0x254E620 });
+		return memory_utils::read<math_utils::Matrix4x4>({ memory_utils::get_base_address(), 0x254E620 }); //0x7FF7CD2CE620
 	}
-
-	char* get_my_name()
-	{
-		return memory_utils::read_string({ memory_utils::get_base_address(), 0x25A2938, 0x128, 0x14, 0x18, 0xF0, 0x2C, 0x128, 0x0 });
-	}
-
+	
 	DWORD64 get_entity_list()
 	{
-		return memory_utils::read<DWORD64>({ (DWORD64)game_module, 0xC57838, 0x18, 0x80 });
-	}
-
-	int get_max_players_on_map()
-	{
-		return memory_utils::read<int>({ (DWORD64)game_module, 0xBC4544 });
+		return memory_utils::read<DWORD64>({ (DWORD64)game_module, 0xC80CB8, 0x80 });
 	}
 
 	class CDeceitProperties
 	{
 	public:
+
 		static CDeceitProperties* get_player_by_id(DWORD64 entity_list, int id)
 		{
 			return memory_utils::read<CDeceitProperties*>({ entity_list, (DWORD64)((id + 1) * 0x8) });
 		}
 
+		CDeceitProperties* get_entity_class()
+		{
+			return this;
+		}
+
 		char* get_name()
 		{
-			char* name = memory_utils::read_string({ (DWORD64)this, 0x480, 0x0 });
-
-			if (strcmp(name, game_utils::get_my_name()) == 0)
-				return 0;
-			else
-				return name;
+			return memory_utils::read_string({ (DWORD64)this, 0x3F8, 0x0 });
 		}
 
 		float get_health()
 		{
-			return memory_utils::read<float>({ (DWORD64)this, 0xEC });
+			return memory_utils::read<float>({ (DWORD64)this, 0xF0 });
 		}
 
 		float get_vampire_health()
 		{
-			return memory_utils::read<float>({ (DWORD64)this, 0xF0 });
+			return memory_utils::read<float>({ (DWORD64)this, 0xF4 });
 		}
 
 		float get_armor()
 		{
-			return memory_utils::read<float>({ (DWORD64)this, 0xF4});
+			return memory_utils::read<float>({ (DWORD64)this, 0xF8 });
 		}
 
 		bool get_is_vampire_now() //TerrorTransformAction
 		{
-			return (bool)memory_utils::read<int>({ (DWORD64)this, 0x710 }); //check is valid pointer of TerrorTransformAction (old vampire check)
+			return (bool)memory_utils::read<DWORD64>({ (DWORD64)this, 0x6A8 }); //check is valid pointer of TerrorTransformAction (old vampire check)
 		}
 
 		DWORD64 player_entity() //CPlayer
 		{
-			return memory_utils::read<DWORD64>({ (DWORD64)this, 0x140 });
+			return memory_utils::read<DWORD64>({ (DWORD64)this, 0x148 });
 		}
 
 		DWORD64 player_entity_movement_controller(DWORD64 player_entity) //CPlayerMovementController
@@ -514,20 +569,21 @@ namespace game_utils
 			return memory_utils::read<DWORD64>({ player_entity, 0x60, 0x78 });
 		}
 
-		Vector get_origin_aabb_max(DWORD64 player_entity_movement_controller)
+		math_utils::Vector get_origin_aabb_max(DWORD64 player_entity_movement_controller)
 		{
-			return memory_utils::read<Vector>({ player_entity_movement_controller, 0x218 });
+			return memory_utils::read<math_utils::Vector>({ player_entity_movement_controller, 0x218 });
 		}
 
-		Vector get_origin_aabb_min(DWORD64 player_entity_movement_controller)
+		math_utils::Vector get_origin_aabb_min(DWORD64 player_entity_movement_controller)
 		{
-			return memory_utils::read<Vector>({ player_entity_movement_controller, 0x1E8 });
+			return memory_utils::read<math_utils::Vector>({ player_entity_movement_controller, 0x1E8 });
 		}
 	};
 
-	bool world_to_screen(Matrix4x4 view_projection, const Vector vIn, float* flOut)
+	bool world_to_screen(math_utils::Matrix4x4 view_projection, const math_utils::Vector vIn, float* flOut)
 	{
 		float w = view_projection.m[0][3] * vIn.x + view_projection.m[1][3] * vIn.y + view_projection.m[2][3] * vIn.z + view_projection.m[3][3];
+		flOut[2] = w;
 
 		if (w < 0.01)
 			return false;
@@ -568,24 +624,24 @@ namespace functions
 			if (vars::visuals::enable == false)
 				return;
 
-			auto entity_list = game_utils::get_entity_list();
+			const auto entity_list = game_utils::get_entity_list();
 
 			if (entity_list == NULL)
 				return;
 
-			auto view_projection = game_utils::get_matrix();
+			const auto view_projection = game_utils::get_matrix();
 
-			for (int i = 0; i < game_utils::get_max_players_on_map(); i++)
+			for (int i = 0; i < 6; i++)
 			{
-				auto entity = game_utils::CDeceitProperties::get_player_by_id(entity_list, i);
-				
+				const auto &entity = game_utils::CDeceitProperties::get_player_by_id(entity_list, i);
+
 				if (entity == NULL)
 					continue;
 
 				auto health = entity->get_health();
 
-				/*if (health == 0.f)
-					continue;*/
+				if (health <= 0.1f)
+					continue;
 
 				auto health_vampire = entity->get_vampire_health();
 
@@ -611,10 +667,13 @@ namespace functions
 				auto v_bottom = entity->get_origin_aabb_min(player_entity_movement_controller);
 				auto v_top = entity->get_origin_aabb_max(player_entity_movement_controller);
 
-				float out_bottom[2], out_top[2];
+				float out_bottom[3], out_top[3];
 				if (game_utils::world_to_screen(view_projection, v_bottom, out_bottom)
 					&& game_utils::world_to_screen(view_projection, v_top, out_top))
 				{
+					if (out_top[2] <= 0.45f) //resolve drawin' my box
+						continue;
+
 					float h = out_bottom[1] - out_top[1];
 					float w = h / 2;
 					float x = out_bottom[0] - w / 2;
@@ -724,7 +783,6 @@ void begin_scene()
 	{
 		ImGui::GetIO().MouseDrawCursor = true;
 		ImGui::Begin("alternativehack.xyz: Deceit meme | credits: zerrocxste, guss.", &vars::menu_open);
-		ImGui::Text("Hello, %s!", vars::user_name);
 		ImGui::BeginChild("functions", ImVec2(), true);
 		ImGui::Text("Visuals");
 		ImGui::Checkbox("Enable", &vars::visuals::enable);
@@ -882,6 +940,8 @@ void hook_dx11(HMODULE module)
 		std::cout << __FUNCTION__ << " > failed create hook resizebuffers\n";
 		FreeLibraryAndExitThread(module, 1);
 	}
+
+	
 }
 
 void unhook(LPVOID address)
@@ -930,13 +990,15 @@ void hack_thread(HMODULE module)
 		FreeLibraryAndExitThread(module, 1);
 	}
 
-	strcpy(vars::user_name, game_utils::get_my_name());
-
 	MH_Initialize();
 
 	hook_dx11(module);
 
 	hook_wndproc(module);
+
+	//Address of signature = Game.DLL + 0x00383EE5
+	//"\x89\x58\x00\xB0", "xx?x"
+	//	"89 58 ? B0"
 
 	while (true)
 	{
